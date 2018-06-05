@@ -1,0 +1,76 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    repositories {
+        jcenter()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.1.2'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+repositories {
+    mavenLocal()
+    jcenter()
+    google()
+    maven {
+        url "https://nexus-repository.snips.ai/repository/snips-maven-releases/"
+    }
+    maven {
+        url "https://nexus-repository.snips.ai/repository/snips-maven-snapshots/"
+    }
+}
+
+apply plugin: 'com.android.application'
+
+android {
+    signingConfigs {
+        release {
+            storeFile file("cacerts")
+            storePassword "cacerts"
+            keyAlias "www"
+            keyPassword ""
+        }
+    }
+    compileSdkVersion 27
+    buildToolsVersion '27.0.3'
+    defaultConfig {
+        applicationId "com.mozilla.speech"
+        minSdkVersion 21
+        targetSdkVersion 27
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+ 	    signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    packagingOptions {
+        exclude 'lib/armeabi/*'
+        exclude 'lib/mips/*'
+        exclude 'lib/mips64/*'
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    implementation 'com.android.support:appcompat-v7:27.+'
+    implementation 'com.android.support.constraint:constraint-layout:1.0.2'
+
+    implementation('ai.snips:snips-platform-android:0.55.2@aar') {
+        transitive = true
+    }
+
+    testImplementation 'junit:junit:4.12'
+}
