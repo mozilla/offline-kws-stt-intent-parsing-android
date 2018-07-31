@@ -1,6 +1,7 @@
 package com.mozilla.speech;
 
 import android.Manifest;
+import android.app.DownloadManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
@@ -8,6 +9,7 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Looper;
 import android.os.Process;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -15,11 +17,28 @@ import android.text.Html;
 import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.view.Window;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ScrollView;
+
+import com.android.volley.AuthFailureError;
+import com.android.volley.Request;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.RequestQueue;
+import com.android.volley.toolbox.Volley;
+
+import org.json.JSONObject;
+
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+
 import ai.snips.hermes.IntentMessage;
 import ai.snips.hermes.SessionEndedMessage;
 import ai.snips.hermes.SessionQueuedMessage;
@@ -39,9 +58,18 @@ public class MainActivity extends AppCompatActivity {
     private static final int ENCODING = AudioFormat.ENCODING_PCM_16BIT;
 
     private SnipsPlatformClient client;
+    private RequestQueue mRequestQueue;
 
     private AudioRecord recorder;
     Context app_context;
+
+    private WebView webview;
+    public Boolean snips_started = Boolean.FALSE;
+    private File model_folder = new File(Environment.getExternalStorageDirectory().getPath()
+            + "/wot_assistant/");
+    private static final String HOME_PAGE = "https://speechcontrollerdemo.mozilla-iot.org/things";
+    private static final String COMMANDS_URL = "https://speechcontrollerdemo.mozilla-iot.org/commands";
+    private static final String OAUTH_TOKEN = "Bearer <add token>";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
         app_context = this.getApplicationContext();
         ActivityCompat.requestPermissions(this,
                 new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},1);
+
         findViewById(R.id.start).setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -58,9 +87,6 @@ public class MainActivity extends AppCompatActivity {
                     final Button button = (Button) findViewById(R.id.start);
                     button.setEnabled(false);
                     button.setText(R.string.loading);
-
-                    final View scrollView = findViewById(R.id.scrollView);
-                    scrollView.setVisibility(View.GONE);
 
                     final View loadingPanel = findViewById(R.id.loadingPanel);
                     loadingPanel.setVisibility(View.VISIBLE);
@@ -70,25 +96,28 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        File model_folder = new File(Environment.getExternalStorageDirectory().getPath()
-                + "/webvr_assistant/");
-        if (model_folder.exists()) {
-            final Button button = (Button) findViewById(R.id.install);
-            button.setEnabled(false);
-            button.setText(R.string.model_installed);
+
+        // FIXME!! -- not deflating
+        if (!model_folder.exists()) {
+            Decompress.unzipFromAssets(app_context, "assistant-wot.zip",
+                    Environment.getExternalStorageDirectory().getPath()
+                            + "/wot_assistant/");
         }
 
-        findViewById(R.id.install).setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                if (ensurePermissions()) {
-                    final Button button = (Button) findViewById(R.id.install);
-                    button.setEnabled(false);
-                    button.setText(R.string.extracting);
-                    Decompress.unzipFromAssets(app_context, "assistant.zip",
-                            Environment.getExternalStorageDirectory().getPath()
-                                     + "/webvr_assistant/");
-                    button.setText(R.string.model_installed);
+        // load webview
+        webview = findViewById(R.id.webview);
+        webview.setWebViewClient(new WebViewClient());
+        webview.getSettings().setJavaScriptEnabled(true);
+        webview.getSettings().setDomStorageEnabled(true);
+        webview.loadUrl(HOME_PAGE);
+
+        webview.setWebViewClient(new WebViewClient() {
+
+            public void onPageFinished(WebView view, String url) {
+                // do your stuff here
+                if (!snips_started && model_folder.exists()) {
+                    startMegazordService();
+                    snips_started = true;
                 }
             }
         });
@@ -114,11 +143,25 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    public RequestQueue getRequestQueue() {
+        if (mRequestQueue == null) {
+            // getApplicationContext() is key, it keeps you from leaking the
+            // Activity or BroadcastReceiver if someone passes one in.
+            mRequestQueue = Volley.newRequestQueue(getApplicationContext());
+        }
+        return mRequestQueue;
+    }
+
+    public <T> void addToRequestQueue(Request<T> req) {
+        getRequestQueue().add(req);
+    }
+
+
     private void startMegazordService() {
         if (client == null) {
             // a dir where the assistant models was unziped. it should contain the folders asr dialogue hotword and nlu
             File assistantDir = new File(Environment.getExternalStorageDirectory()
-                                                    .toString(), "webvr_assistant/assistant/");
+                                                    .toString(), "wot_assistant/assistant/");
 
             client = new SnipsPlatformClient.Builder(assistantDir)
                     .enableDialogue(true) // defaults to true
@@ -135,9 +178,6 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-
-                            findViewById(R.id.loadingPanel).setVisibility(View.GONE);
-                            findViewById(R.id.scrollView).setVisibility(View.VISIBLE);
 
                             final Button button = findViewById(R.id.start);
                             button.setEnabled(true);
@@ -169,6 +209,43 @@ public class MainActivity extends AppCompatActivity {
                 public Unit invoke(IntentMessage intentMessage) {
                     Log.d(TAG, "received an intent: " + intentMessage);
                     // Do your magic here :D
+
+                    JSONObject json = new JSONObject();
+                    try {
+                        json.put("text", intentMessage.getInput());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
+                    Log.d(TAG, "requesting: " + json.toString());
+
+                    JsonObjectRequest jsonObjectRequest = new JsonObjectRequest
+                            (Request.Method.POST, COMMANDS_URL, json, new Response.Listener<JSONObject>() {
+
+                                @Override
+                                public void onResponse(JSONObject response) {
+                                    Log.d(TAG, "Response: " + response.toString());
+                                }
+                            }, new Response.ErrorListener() {
+
+                                @Override
+                                public void onErrorResponse(VolleyError error) {
+                                    // TODO: Handle error
+
+                                }
+                            }) {
+                                @Override
+                                public Map<String, String> getHeaders() throws AuthFailureError {
+                                    Map<String, String> params = new HashMap<String, String>();
+                                    params.put("Authorization", OAUTH_TOKEN);
+                                    params.put("Accept", "application/json");
+
+                                    return params;
+                                }
+                        };
+
+                    // Access the RequestQueue through your singleton class.
+                    addToRequestQueue(jsonObjectRequest);
 
                     // For now, lets just use a random sentence to tell the user we understood but don't know what to do
                     client.endSession(intentMessage.getSessionId(), intentMessage.getInput());
@@ -213,19 +290,7 @@ public class MainActivity extends AppCompatActivity {
             // If you need us to expose more APIs please do ask !
             client.setOnSnipsWatchListener(new Function1<String, Unit>() {
                 public Unit invoke(final String s) {
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            // We enabled html logs in the builder, hence the fromHtml. If you only log to the console,
-                            // or don't want colors to be displayed, do not enable the option
-                            ((EditText) findViewById(R.id.text)).append(Html.fromHtml(s + "<br />"));
-                            findViewById(R.id.scrollView).post(new Runnable() {
-                                @Override
-                                public void run() {
-                                    ((ScrollView) findViewById(R.id.scrollView)).fullScroll(View.FOCUS_DOWN);
-                                }
-                            });
-                        }
-                    });
+                    Log.d(TAG, s);
                     return null;
                 }
             });
