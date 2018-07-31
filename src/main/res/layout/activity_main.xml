@@ -24,36 +24,27 @@
         android:orientation="vertical"
         android:weightSum="1">
 
+        <WebView
+            android:id="@+id/webview"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
+
         <Button
             android:id="@+id/start"
             style="@style/Widget.AppCompat.Button"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:text="@string/start" />
 
         <Button
             android:id="@+id/install"
             style="@style/Widget.AppCompat.Button"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/install_model" />
-
-        <ScrollView
-            android:id="@+id/scrollView"
-            android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1">
-
-            <EditText
-                android:id="@+id/text"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:enabled="false"
-                android:focusable="false"
-                android:gravity="start"
-                android:inputType="textMultiLine"
-                android:scrollbars="vertical" />
-        </ScrollView>
+            android:layout_weight="1"
+            android:text="@string/install_model" />
     </LinearLayout>
 
 </android.support.constraint.ConstraintLayout>
