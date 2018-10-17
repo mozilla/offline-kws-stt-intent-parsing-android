@@ -39,6 +39,7 @@ import com.loopj.android.http.RequestParams;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
+import android.view.View.OnLongClickListener;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -81,31 +82,28 @@ public class MainActivity extends AppCompatActivity {
     private WebView webview;
     public Boolean snips_started = Boolean.FALSE;
     private File model_folder = new File(Environment.getExternalStorageDirectory().getPath()
-            + "/wot_assistant/");
-    private static final String HOME_PAGE = "https://speechcontrollerdemo.mozilla-iot.org/things";
-    private static final String COMMANDS_URL = "https://speechcontrollerdemo.mozilla-iot.org/commands";
-    private static final String OAUTH_TOKEN = "Bearer <add token>";
-
+            + "/snips_android_assistant/");
+    private static final String HOME_PAGE = "https://*.mozilla-iot.org/things";
+    private static final String COMMANDS_URL = "https://*.mozilla-iot.org/commands";
+    private static final String OAUTH_TOKEN = "Bearer <oauthtokenhere>";
+    private Button btnstart;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         ensurePermissions();
-        app_context = this.getApplicationContext();
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},1);
-
-        findViewById(R.id.start).setOnClickListener(new OnClickListener() {
+        btnstart =  findViewById(R.id.start);
+        btnstart.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (ensurePermissions()) {
-                    final Button button = (Button) findViewById(R.id.start);
-                    button.setEnabled(false);
-                    button.setText(R.string.loading);
+                    btnstart.setEnabled(false);
+                    btnstart.setText(R.string.loading);
 
                     final View loadingPanel = findViewById(R.id.loadingPanel);
                     loadingPanel.setVisibility(View.VISIBLE);
-                    injectIntent();
+                    startMegazordService();
+                    //injectIntent();
                 }
             }
         });
@@ -116,7 +114,10 @@ public class MainActivity extends AppCompatActivity {
         webview.getSettings().setJavaScriptEnabled(true);
         webview.getSettings().setDomStorageEnabled(true);
         webview.loadUrl(HOME_PAGE);
+        webview.setVerticalScrollBarEnabled(true);
+        webview.setHorizontalScrollBarEnabled(true);
 
+        /*
         webview.setWebViewClient(new WebViewClient() {
 
             public void onPageFinished(WebView view, String url) {
@@ -136,6 +137,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+        */
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
@@ -249,16 +251,10 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void run() {
 
-                            final Button button = findViewById(R.id.start);
-                            button.setEnabled(true);
-                            button.setText(R.string.start_dialog_session);
-                            button.setOnClickListener(new OnClickListener() {
-                                @Override
-                                public void onClick(View view) {
-                                    // programmatically start a dialogue session
-                                    client.startSession(null, new ArrayList<String>(), false, null);
-                                }
-                            });
+                            btnstart.setEnabled(true);
+                            btnstart.setText(R.string.listening);
+                            injectIntent();
+
                         }
                     });
                     return null;
@@ -269,7 +265,7 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public Unit invoke() {
                     Log.d(TAG, "an hotword was detected !");
-                    // Do your magic here :D
+                    btnstart.setText(R.string.saycommand);
                     return null;
                 }
             });
@@ -283,6 +279,7 @@ public class MainActivity extends AppCompatActivity {
                     JSONObject json = new JSONObject();
                     try {
                         json.put("text", intentMessage.getInput());
+                        btnstart.setText(intentMessage.getInput());
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -376,7 +373,7 @@ public class MainActivity extends AppCompatActivity {
     private void injectIntent() {
         // inject new values in the "house_room" entity
         HashMap<String, List<String>> values = new HashMap<>();
-        values.put("house_room", Arrays.asList("bunker", "batcave"));
+        values.put("room", Arrays.asList("kitchen", "office", "den", "deck"));
         client.requestInjection(new InjectionRequestMessage(
                 Collections.singletonList(new InjectionOperation(InjectionKind.Add, values)),
                 new HashMap<String, List<String>>()));
