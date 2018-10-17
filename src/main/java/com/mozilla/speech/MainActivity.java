@@ -3,6 +3,7 @@ package com.mozilla.speech;
 import android.Manifest;
 import android.app.DownloadManager;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
@@ -18,6 +19,7 @@ import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
@@ -31,19 +33,32 @@ import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.RequestQueue;
 import com.android.volley.toolbox.Volley;
+import com.loopj.android.http.AsyncHttpClient;
+import com.loopj.android.http.AsyncHttpResponseHandler;
+import com.loopj.android.http.RequestParams;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+import ai.snips.hermes.InjectionKind;
+import ai.snips.hermes.InjectionOperation;
+import ai.snips.hermes.InjectionRequestMessage;
 import ai.snips.hermes.IntentMessage;
 import ai.snips.hermes.SessionEndedMessage;
 import ai.snips.hermes.SessionQueuedMessage;
 import ai.snips.hermes.SessionStartedMessage;
 import ai.snips.platform.SnipsPlatformClient;
+import cz.msebera.android.httpclient.Header;
+import cz.msebera.android.httpclient.entity.FileEntity;
+import cz.msebera.android.httpclient.entity.StringEntity;
 import kotlin.Unit;
 import kotlin.jvm.functions.Function0;
 import kotlin.jvm.functions.Function1;
@@ -51,7 +66,7 @@ import kotlin.jvm.functions.Function1;
 public class MainActivity extends AppCompatActivity {
 
     private static final int AUDIO_ECHO_REQUEST = 0;
-    private static final String TAG = "MainActivity";
+    private static final String TAG = "snips";
 
     private static final int FREQUENCY = 16_000;
     private static final int CHANNEL = AudioFormat.CHANNEL_IN_MONO;
@@ -90,19 +105,10 @@ public class MainActivity extends AppCompatActivity {
 
                     final View loadingPanel = findViewById(R.id.loadingPanel);
                     loadingPanel.setVisibility(View.VISIBLE);
-
-                    startMegazordService();
+                    injectIntent();
                 }
             }
         });
-
-
-        // FIXME!! -- not deflating
-        if (!model_folder.exists()) {
-            Decompress.unzipFromAssets(app_context, "assistant-wot.zip",
-                    Environment.getExternalStorageDirectory().getPath()
-                            + "/wot_assistant/");
-        }
 
         // load webview
         webview = findViewById(R.id.webview);
@@ -116,11 +122,76 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 // do your stuff here
                 if (!snips_started && model_folder.exists()) {
+                    Log.d(TAG, "Starting snips");
                     startMegazordService();
                     snips_started = true;
+                    Log.d(TAG, "Starting started");
+
+                    // Record to the external cache directory for visibility
+                    //mFileName = Environment.getExternalStorageDirectory().getPath()
+                    //        + "/assistant-wot/";
+                    //mFileName += "/audiorecordtest.3gp";
+
+                    //callStt(mFileName);
                 }
             }
         });
+
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    private void callStt(String videoPath){
+        try
+        {
+
+            JSONObject jsonParams = new JSONObject();
+            jsonParams.put("notes", "Test api support");
+            FileEntity entity = new FileEntity(new File(videoPath));
+
+            AsyncHttpClient client = new AsyncHttpClient();
+            client.post(getApplicationContext(),"http://192.168.0.25:9001/", entity, "audio/3gpp",
+                    new AsyncHttpResponseHandler() {
+
+                @Override
+                public void onStart() {
+                    // called before request is started
+                }
+
+                @Override
+                public void onSuccess(int statusCode, Header[] headers, byte[] response) {
+                    // called when response HTTP status is "200 OK"
+                    Log.d(TAG, "STT response ok:" + new String(response));
+                    String json = new String(response);
+                    try {
+                        JSONObject reader = new JSONObject(json);
+                        JSONArray results = reader.getJSONArray("data");
+                        Log.d(TAG, "STT response transcription:" + results.getJSONObject(0).getString("text"));
+
+                    } catch (Exception exc) {
+                        Log.d(TAG, "Exception:" + exc.getMessage());
+                    }
+                }
+
+
+                @Override
+                public void onFailure(int statusCode, Header[] headers, byte[] errorResponse, Throwable e) {
+                    // called when response HTTP status is "4XX" (eg. 401, 403, 404)
+                    Log.d(TAG, "STT response failure:" + String.valueOf(statusCode));
+
+                }
+
+                @Override
+                public void onRetry(int retryNo) {
+                    // called when request is retried
+                }
+            });
+
+        }
+        catch(Exception e)
+        {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -160,16 +231,15 @@ public class MainActivity extends AppCompatActivity {
     private void startMegazordService() {
         if (client == null) {
             // a dir where the assistant models was unziped. it should contain the folders asr dialogue hotword and nlu
-            File assistantDir = new File(Environment.getExternalStorageDirectory()
-                                                    .toString(), "wot_assistant/assistant/");
 
-            client = new SnipsPlatformClient.Builder(assistantDir)
+            client = new SnipsPlatformClient.Builder(model_folder)
                     .enableDialogue(true) // defaults to true
                     .enableHotword(true) // defaults to true
                     .enableSnipsWatchHtml(true) // defaults to false
                     .enableLogs(true) // defaults to false
                     .withHotwordSensitivity(0.5f) // defaults to 0.5
                     .enableStreaming(true) // defaults to false
+                    .enableInjection(true)
                     .build();
 
             client.setOnPlatformReady(new Function0<Unit>() {
@@ -301,6 +371,15 @@ public class MainActivity extends AppCompatActivity {
 
             client.connect(this.getApplicationContext());
         }
+    }
+
+    private void injectIntent() {
+        // inject new values in the "house_room" entity
+        HashMap<String, List<String>> values = new HashMap<>();
+        values.put("house_room", Arrays.asList("bunker", "batcave"));
+        client.requestInjection(new InjectionRequestMessage(
+                Collections.singletonList(new InjectionOperation(InjectionKind.Add, values)),
+                new HashMap<String, List<String>>()));
     }
 
     private volatile boolean continueStreaming = true;
